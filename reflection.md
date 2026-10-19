@@ -52,6 +52,38 @@ I did not accept every suggestion. The assistant also recommended replacing my p
 - Describe one tradeoff your scheduler makes.
 - Why is that tradeoff reasonable for this scenario?
 
+**My scheduler reports conflicts between fixed-time tasks, but it doesn't fix them.** When a task has a fixed time, like heartworm meds at 09:00, `assign_time_slots()` puts it exactly at that time, even if another fixed task is already there. It doesn't move either task. After the plan is built, `detect_conflicts()` finds the overlaps and `conflict_warnings()` turns each one into a message, such as *"Same pet (Mochi): Heartworm meds 09:00-09:05 overlaps Ear drops 09:00-09:05 by 5 min"*. The app shows these warnings and leaves it to the owner to decide what to do. Flexible tasks never cause conflicts, because they are only placed into free gaps.
+
+The check compares how long each task lasts, not just its start time. Two tasks clash if one starts before the other ends, so a 20-minute vet call at 09:00 and meds at 09:10 are flagged even though they start at different times. Back-to-back tasks (09:00–09:30, then 09:30) are not flagged.
+
+**Why this tradeoff is reasonable.** A fixed time usually means something outside the app depends on it: a vet appointment, or medication that has to be given at a set hour. If the scheduler moved one of those tasks on its own, it could quietly break something important. For example, it might push meds an hour later just to make the timeline look clean. The owner knows which time really can't change, so the scheduler points out the problem and lets the owner choose. The warning approach is also simple and can't crash: `generate_plan()` always returns a plan, and a conflict only adds a message.
+
+**What it costs.** The plan shown on screen can be impossible to follow as written, since one person can't do two things at once. The owner has to read the warning and edit a task themselves. The scheduler also only checks tasks that actually made it into the plan. If a fixed task is skipped because there wasn't enough time left, it won't be flagged. If I improved this, I would keep the higher-priority fixed task where it is and move the other one to the nearest free gap. The reason would say it was moved, for example "moved from 09:00 (conflicted with Heartworm meds)". The warning would still be there in case no gap is available.
+
+**Simplifying `detect_conflicts()`: which version I kept.** I asked my AI assistant how this method could be simplified for better readability or performance. It suggested replacing the nested loop with a single list comprehension using `itertools.combinations`:
+
+```python
+# Suggested ("Pythonic") version
+entries = sorted(self.plan, key=lambda e: e["start"])
+return [(a["task"], b["task"]) for a, b in combinations(entries, 2) if b["start"] < a["end"]]
+```
+
+```python
+# My current version
+entries = sorted(self.plan, key=lambda e: e["start"])
+conflicts = []
+for i, a in enumerate(entries):
+    for b in entries[i + 1 :]:
+        if b["start"] >= a["end"]:
+            break  # entries are sorted by start, so no later one can overlap `a` either
+        conflicts.append((a["task"], b["task"]))
+return conflicts
+```
+
+I didn't just trust that the two were the same. I ran both on 5,000 random plans, and they returned identical results every time. The shorter version is more "Pythonic," but it hides an important detail. The test `b["start"] < a["end"]` is only a correct overlap check because the list was sorted first, and nothing in that one line tells the reader so. It is also slower: it compares every pair of tasks, while my loop stops early with `break` once no later task can overlap. On a plan with 10 tasks the difference was about 1 microsecond per call, which doesn't matter. On 200 tasks, the suggested version was about 4 times slower (around 1.3 ms versus 0.33 ms).
+
+**I kept my current version.** A real pet owner's day has maybe 5 to 15 tasks, so speed isn't the deciding factor. Readability is. The loop with its comment explains *why* it can stop early. The one-liner is shorter, but a reader would need to already know that the sorting matters to trust it. If I ever needed to use the shorter version, I would add a comment saying it depends on the list being sorted by start time.
+
 ---
 
 ## 3. AI Collaboration

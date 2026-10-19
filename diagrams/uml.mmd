@@ -11,6 +11,7 @@ classDiagram
         +add_pet(pet: Pet) None
         +remove_pet(pet: Pet) None
         +get_all_tasks() list~Task~
+        +filter_tasks(pet_name: str, completed: bool) list~Task~
         +set_availability(minutes: int, start: time, end: time) None
     }
 
@@ -23,6 +24,7 @@ classDiagram
         +add_task(task: Task) None
         +edit_task(task_id: str, changes: dict) None
         +remove_task(task_id: str) None
+        +complete_task(task_id: str, day: date) Task
         +get_tasks() list~Task~
     }
 
@@ -37,11 +39,13 @@ classDiagram
         +str frequency
         +bool completed
         +date last_completed
+        +date due_date
         +str pet_name
         +str task_id
         +mark_complete(day: date) None
         +priority_value() int
         +is_due_today(day: date) bool
+        +next_occurrence() Task
         +update(changes: dict) None
     }
 
@@ -50,9 +54,12 @@ classDiagram
         +list~dict~ plan
         +list~tuple~ skipped
         +sort_tasks(tasks: list~Task~) list~Task~
+        +sort_by_time(tasks: list~Task~) list~Task~
         +filter_tasks(tasks: list~Task~, day: date) list~Task~
         +assign_time_slots(tasks: list~Task~) list~dict~
         +detect_conflicts() list~tuple~
+        +conflict_warnings() list~str~
+        +mark_task_complete(task: Task, day: date) Task
         +generate_plan(day: date) list~dict~
         +explain_choice(task: Task) str
     }
