@@ -1,15 +1,59 @@
 classDiagram
-    %% Replace the placeholders below with your actual classes, attributes, methods, and relationships.
-    %% Keep this file updated so it matches your final implementation.
+    %% PawPal+ working UML draft — update in Phase 6 to match the final implementation.
 
-    class ClassName {
-        +type attribute
-        +method() returnType
+    class Owner {
+        +str name
+        +int available_minutes
+        +time day_start
+        +time day_end
+        +dict preferences
+        +list~Pet~ pets
+        +add_pet(pet: Pet) None
+        +remove_pet(pet: Pet) None
+        +get_all_tasks() list~Task~
+        +set_availability(minutes: int, start: time, end: time) None
     }
 
-    class AnotherClass {
-        +type attribute
-        +method() returnType
+    class Pet {
+        +str name
+        +str species
+        +int age
+        +list~str~ special_needs
+        +list~Task~ tasks
+        +add_task(task: Task) None
+        +edit_task(task_id: str, changes: dict) None
+        +remove_task(task_id: str) None
+        +get_tasks() list~Task~
     }
 
-    ClassName --> AnotherClass : relationship
+    class Task {
+        +str task_id
+        +str title
+        +str category
+        +int duration_minutes
+        +str priority
+        +str preferred_time
+        +str frequency
+        +bool completed
+        +mark_complete() None
+        +priority_value() int
+        +is_due_today(day: date) bool
+        +update(changes: dict) None
+    }
+
+    class Scheduler {
+        +Owner owner
+        +list~Task~ tasks
+        +int available_minutes
+        +sort_tasks() list~Task~
+        +filter_tasks() list~Task~
+        +assign_time_slots() list~dict~
+        +detect_conflicts() list~tuple~
+        +generate_plan() list~dict~
+        +explain_choice(task: Task) str
+    }
+
+    Owner "1" --> "1..*" Pet : owns
+    Pet "1" --> "0..*" Task : has
+    Scheduler "1" --> "1" Owner : plans for
+    Scheduler "1" ..> "0..*" Task : schedules
