@@ -436,6 +436,38 @@ class Scheduler:
                 )
         return warnings
 
+    def suggest_fix(self, a: Task, b: Task) -> tuple[Task, Optional[time]]:
+        """For a conflicting pair from detect_conflicts(), pick which task to move and where.
+
+        The lower-priority task is the one to move (on a tie, the one that starts later), so
+        important care like medication stays at its requested time. The suggested time is the
+        first free gap at or after the task's current start that fits its whole duration
+        without touching any other planned task; if nothing fits before the end of the day,
+        the search starts again from the beginning of the day.
+
+        Args:
+            a: The earlier task of a conflicting pair (as returned by detect_conflicts()).
+            b: The later task of the pair.
+
+        Returns:
+            (task to move, suggested start time), or (task to move, None) if no free gap
+            is long enough anywhere in the owner's day.
+        """
+        move = b if b.priority_value() <= a.priority_value() else a
+        slots = {id(e["task"]): e for e in self.plan}
+        busy = sorted(
+            (_to_minutes(e["start"]), _to_minutes(e["end"])) for e in self.plan if e["task"] is not move
+        )
+        day_start, day_end = _to_minutes(self.owner.day_start), _to_minutes(self.owner.day_end)
+        duration = move.duration_minutes
+        for start in (_to_minutes(slots[id(move)]["start"]), day_start):
+            for busy_start, busy_end in busy:
+                if start < busy_end and busy_start < start + duration:
+                    start = busy_end
+            if start + duration <= day_end:
+                return move, _to_time(start)
+        return move, None
+
     def mark_task_complete(self, task: Task, day: Optional[date] = None) -> Optional[Task]:
         """Complete `task` for its pet; daily/weekly tasks get a new instance for the next occurrence.
 

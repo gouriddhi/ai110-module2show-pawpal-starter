@@ -84,8 +84,10 @@ def main() -> None:
     print("\nConflict check")
     print("-" * 60)
     warnings = scheduler.conflict_warnings()
-    for warning in warnings:
+    for warning, (first, second) in zip(warnings, scheduler.detect_conflicts()):
         print("WARNING: " + warning)
+        move, new_time = scheduler.suggest_fix(first, second)
+        print(f"  -> Suggestion: move {move.title} to {new_time:%H:%M}" if new_time else f"  -> No free gap for {move.title} today")
     if not warnings:
         print("No conflicts.")
 

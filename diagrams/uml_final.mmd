@@ -1,0 +1,82 @@
+classDiagram
+    %% PawPal+ final UML: matches pawpal_system.py.
+    %% "-" = private helper, "$" = static method, Optional~X~ = X or None.
+
+    class Owner {
+        +str name
+        +int available_minutes
+        +time day_start
+        +time day_end
+        +dict preferences
+        +list~Pet~ pets
+        +add_pet(pet: Pet) None
+        +remove_pet(pet: Pet) None
+        +get_all_tasks() list~Task~
+        +filter_tasks(pet_name: str, completed: bool) list~Task~
+        +set_availability(minutes: int, start: time, end: time) None
+    }
+
+    class Pet {
+        +str name
+        +str species
+        +int age
+        +list~str~ special_needs
+        +list~Task~ tasks
+        +add_task(task: Task) None
+        +edit_task(task_id: str, changes: dict) None
+        +remove_task(task_id: str) None
+        +complete_task(task_id: str, day: date) Optional~Task~
+        +get_tasks() list~Task~
+        -_find_task(task_id: str) Task
+    }
+
+    class Task {
+        +str title
+        +int duration_minutes
+        +str priority
+        +str description
+        +str category
+        +Optional~time~ scheduled_time
+        +Optional~str~ preferred_time
+        +str frequency
+        +bool completed
+        +Optional~date~ last_completed
+        +Optional~date~ due_date
+        +str pet_name
+        +str task_id
+        +mark_complete(day: date) None
+        +priority_value() int
+        +is_due_today(day: date) bool
+        +next_occurrence() Optional~Task~
+        +update(changes: dict) None
+        -_clean_frequency(value: str)$ str
+    }
+
+    class Scheduler {
+        +Owner owner
+        +list~dict~ plan
+        +list~tuple~ skipped
+        +sort_tasks(tasks: list~Task~) list~Task~
+        +sort_by_time(tasks: list~Task~) list~Task~
+        +filter_tasks(tasks: list~Task~, day: date) list~Task~
+        +assign_time_slots(tasks: list~Task~) list~dict~
+        +generate_plan(day: date) list~dict~
+        +detect_conflicts() list~tuple~
+        +conflict_warnings() list~str~
+        +suggest_fix(a: Task, b: Task) tuple
+        +mark_task_complete(task: Task, day: date) Optional~Task~
+        +explain_choice(task: Task) str
+        -_entry(task: Task, start: int, end: int, reason: str)$ dict
+    }
+
+    note for Task "frequency: daily | weekly | once\npriority: low | medium | high\nCompleting a daily/weekly task adds a copy\ndue +1 / +7 days (next_occurrence)"
+    note for Scheduler "suggest_fix returns (task to move, new start time or None)"
+
+    %% o-- aggregation: a Pet is created first, then added to an Owner.
+    %% *-- composition: a Task lives in its Pet's list and is tagged with the pet's name.
+    Owner "1" o-- "0..*" Pet : owns (add_pet)
+    Pet "1" *-- "0..*" Task : has (add_task, complete_task)
+    %% The app builds a fresh Scheduler on each rerun, so one Owner can have many.
+    Scheduler "0..*" --> "1" Owner : reads tasks and availability (filter_tasks)
+    Scheduler "1" --> "0..*" Task : holds in plan and skipped
+    Scheduler ..> Pet : completes tasks through (complete_task)

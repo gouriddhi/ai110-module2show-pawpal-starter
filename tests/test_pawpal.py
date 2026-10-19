@@ -503,3 +503,55 @@ def test_unknown_frequency_is_rejected():
 
     task.update({"frequency": "Weekly"})
     assert task.frequency == "weekly"
+
+
+def test_suggest_fix_moves_the_lower_priority_task_to_the_next_free_time():
+    owner, mochi, _ = make_owner()
+    meds = Task("Heartworm meds", 5, "high", scheduled_time=time(9, 0))
+    drops = Task("Ear drops", 5, "medium", scheduled_time=time(9, 0))
+    mochi.add_task(meds)
+    mochi.add_task(drops)
+    scheduler = Scheduler(owner)
+    scheduler.generate_plan(TODAY)
+
+    (a, b), = scheduler.detect_conflicts()
+
+    assert scheduler.suggest_fix(a, b) == (drops, time(9, 5))
+
+
+def test_suggest_fix_moves_the_later_task_when_priorities_tie():
+    owner, mochi, luna = make_owner()
+    vet = Task("Vet call", 20, scheduled_time=time(9, 0))
+    meds = Task("Meds", 20, scheduled_time=time(9, 10))
+    mochi.add_task(vet)
+    luna.add_task(meds)
+    scheduler = Scheduler(owner)
+    scheduler.generate_plan(TODAY)
+
+    assert scheduler.suggest_fix(vet, meds) == (meds, time(9, 20))
+
+
+def test_suggest_fix_looks_earlier_in_the_day_when_nothing_fits_later():
+    owner, mochi, _ = make_owner()
+    owner.set_availability(120, time(8, 0), time(10, 0))
+    walk = Task("Walk", 60, "high", scheduled_time=time(9, 0))
+    brush = Task("Brush", 20, "low", scheduled_time=time(9, 30))
+    mochi.add_task(walk)
+    mochi.add_task(brush)
+    scheduler = Scheduler(owner)
+    scheduler.generate_plan(TODAY)
+
+    assert scheduler.suggest_fix(walk, brush) == (brush, time(8, 0))
+
+
+def test_suggest_fix_returns_none_when_no_gap_is_long_enough():
+    owner, mochi, _ = make_owner()
+    owner.set_availability(120, time(8, 0), time(10, 0))
+    walk = Task("Walk", 60, "high", scheduled_time=time(8, 30))  # leaves two 30-min gaps
+    groom = Task("Groom", 40, "low", scheduled_time=time(9, 0))
+    mochi.add_task(walk)
+    mochi.add_task(groom)
+    scheduler = Scheduler(owner)
+    scheduler.generate_plan(TODAY)
+
+    assert scheduler.suggest_fix(walk, groom) == (groom, None)

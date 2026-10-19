@@ -103,7 +103,24 @@ else:
                 st.success(f"Added '{task_title.strip()}' for {pet.name}.")
 
 if "flash" in st.session_state:
-    st.success(st.session_state.pop("flash"))
+    st.success(st.session_state.pop("flash"), icon="✅")
+
+PRIORITY_BADGE = {"high": "🔴 High", "medium": "🟡 Medium", "low": "🟢 Low"}
+
+
+def due_label(task: Task, today: date) -> str:
+    """Short 'Due' column text, based on Task.is_due_today()."""
+    if task.completed:
+        return "—"
+    if task.is_due_today(today):
+        return f"overdue since {task.due_date:%b %d}" if task.due_date and task.due_date < today else "today"
+    return f"{task.due_date:%b %d}"
+
+
+def span(entry: dict) -> str:
+    """A plan entry's time range, e.g. '09:00–09:05'."""
+    return f"{entry['start']:%H:%M}–{entry['end']:%H:%M}"
+
 
 tasks = owner.get_all_tasks()
 if tasks:
@@ -121,20 +138,22 @@ if tasks:
         st.table(
             [
                 {
+                    "When": f"{t.scheduled_time:%H:%M}" if t.scheduled_time else (t.preferred_time or "any time").capitalize(),
                     "Pet": t.pet_name,
                     "Task": t.title,
+                    "Priority": PRIORITY_BADGE.get(t.priority, t.priority),
                     "Minutes": t.duration_minutes,
-                    "Priority": t.priority,
-                    "When": f"{t.scheduled_time:%H:%M}" if t.scheduled_time else (t.preferred_time or "any"),
-                    "Repeats": t.frequency,
-                    "Due": f"{t.due_date:%b %d}" if t.due_date and t.due_date > date.today() else "today",
-                    "Status": f"done {t.last_completed:%b %d}" if t.completed else "pending",
+                    "Repeats": t.frequency.capitalize(),
+                    "Due": due_label(t, date.today()),
+                    "Status": f"✅ Done {t.last_completed:%b %d}" if t.completed else "⏳ Pending",
                 }
                 for t in Scheduler(owner).sort_by_time(shown)
-            ]
+            ],
+            hide_index=True,
         )
+        st.caption(f"Showing {len(shown)} of {len(tasks)} tasks, sorted by time of day.")
     else:
-        st.caption("No tasks match these filters.")
+        st.info("No tasks match these filters.", icon="🔍")
 
     pending = {t.task_id: t for t in owner.filter_tasks(completed=False)}
     if pending:
@@ -159,33 +178,73 @@ st.divider()
 # --- Schedule ------------------------------------------------------------
 
 st.subheader("Build schedule")
-if st.button("Generate schedule", disabled=not tasks):
+if st.button("Generate schedule", type="primary", disabled=not tasks):
+    st.session_state.show_schedule = True
+
+# st.button is only True on the rerun right after the click, so remember that a schedule
+# was requested and rebuild it on every rerun. It then stays visible while you filter or
+# complete tasks, and always reflects the latest changes.
+if st.session_state.get("show_schedule") and tasks:
     scheduler = Scheduler(owner)
     plan = scheduler.generate_plan()
+    conflicts = scheduler.detect_conflicts()
+    slots = {id(e["task"]): e for e in plan}
+    in_conflict = {id(task) for pair in conflicts for task in pair}
+    used = sum(e["task"].duration_minutes for e in plan)
+
+    st.markdown(f"#### Today's schedule for {owner.name}")
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Scheduled", len(plan), border=True)
+    col2.metric("Minutes used", f"{used} / {owner.available_minutes}", border=True)
+    col3.metric("Conflicts", len(conflicts), border=True)
+    col4.metric("Not scheduled", len(scheduler.skipped), border=True)
+
+    # One warning per conflict: what clashes in plain words, then a concrete fix.
+    for first, second in conflicts:
+        a, b = slots[id(first)], slots[id(second)]
+        if first.pet_name == second.pet_name:
+            problem = (
+                f"**{first.pet_name} has two tasks at once:** {first.title} ({span(a)}) "
+                f"and {second.title} ({span(b)})."
+            )
+        else:
+            problem = (
+                f"**You can't be in two places at once:** {first.title} for {first.pet_name} ({span(a)}) "
+                f"and {second.title} for {second.pet_name} ({span(b)})."
+            )
+        move, new_time = scheduler.suggest_fix(first, second)
+        if new_time:
+            tip = f"💡 Suggestion: move **{move.title}** ({move.priority} priority) to **{new_time:%H:%M}**, the next free time."
+        else:
+            tip = f"💡 No free gap today is long enough for **{move.title}**. Try shortening it or doing it another day."
+        st.warning(f"{problem}\n\n{tip}", icon="⚠️")
+    if plan and not conflicts:
+        st.success("No time conflicts. This plan works as written.", icon="✅")
 
     if plan:
-        st.markdown(f"#### Today's schedule for {owner.name}")
         st.table(
             [
                 {
-                    "Time": f"{e['start']:%H:%M}–{e['end']:%H:%M}",
+                    "Time": span(e),
                     "Pet": e["pet"],
-                    "Task": e["task"].title,
-                    "Priority": e["task"].priority,
-                    "Why": e["reason"],
+                    "Task": ("⚠️ " if id(e["task"]) in in_conflict else "") + e["task"].title,
+                    "Priority": PRIORITY_BADGE.get(e["task"].priority, e["task"].priority),
+                    "Why this slot": e["reason"].capitalize(),
                 }
                 for e in plan
-            ]
+            ],
+            hide_index=True,
         )
-        scheduled = sum(e["task"].duration_minutes for e in plan)
-        st.caption(f"{len(plan)} tasks, {scheduled} of {owner.available_minutes} minutes used.")
+        st.caption("Updates automatically as you add or complete tasks.")
     else:
-        st.warning("Nothing could be scheduled today.")
-
-    for warning in scheduler.conflict_warnings():
-        st.warning(f"⚠️ Conflict: {warning}. Move one of these tasks or change its time.")
+        st.info("Nothing could be scheduled today. See below for why.", icon="ℹ️")
 
     if scheduler.skipped:
-        st.markdown("#### Skipped")
-        for task, _ in scheduler.skipped:
-            st.write("- " + scheduler.explain_choice(task))
+        st.markdown("#### Not scheduled today")
+        st.table(
+            [
+                {"Pet": task.pet_name, "Task": task.title, "Reason": reason[0].upper() + reason[1:]}
+                for task, reason in scheduler.skipped
+            ],
+            hide_index=True,
+        )
